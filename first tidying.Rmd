@@ -1,0 +1,97 @@
+---
+title: "Initial tidying"
+author: "Yubin Fu"
+date: "2021/5/10"
+output: pdf_document
+---
+
+```{r}
+library(tidyverse)
+library(lubridate)
+Sys.setlocale(category = "LC_ALL", locale = "English_United States.1252")
+setwd("~/Finnand_bike")
+```
+
+
+## Bikes
+```{r}
+# This is a 2GB file, it might be too large for the project
+bike <- read_csv("./database.csv",
+                 col_types = cols(
+                   departure = col_datetime(format = "%Y-%m-%d %H:%M:%S"),
+                   return = col_datetime(format = "%Y-%m-%d %H:%M:%S")
+                 ))
+problem <- problems(bike)
+
+# We notice that not all stations are label in numbers
+# Since those station label are not very useful
+# We decide to remove them
+bike <- read_csv(
+  "./database.csv",
+  col_types = cols(
+    departure = col_datetime(format = "%Y-%m-%d %H:%M:%S"),
+    return = col_datetime(format = "%Y-%m-%d %H:%M:%S"),
+    departure_id = col_skip(),
+    return_id = col_skip()
+  )
+)
+
+bike_date_stat <- bike %>%
+  mutate(dep_dt = date(departure),
+         ret_dt = date(return)) %>%
+  group_by(dep_dt) %>%
+  summarise(
+    count = n(),
+    distance = mean(`distance (m)`),
+    duration = mean(`duration (sec.)`),
+    temperature = median(`Air temperature (degC)`)
+  )
+
+bike_mapping <- bike %>%
+  select(departure, return, ends_with("itude")) %>% 
+  mutate(departure = date(departure),
+         return = date(return))
+
+bike_date_stat %>%
+  filter(year(dep_dt) == 2020) %>% 
+  ggplot() +
+  geom_point(aes(x = dep_dt, y = temperature)) +
+  facet_wrap( ~ year(dep_dt), scales = "free_x")
+
+ggplot(bike_date_stat, aes(x = dep_dt, y = count)) +
+  geom_point() +
+  facet_wrap( ~ year(dep_dt), scales = "free_x")
+
+# save
+bike_mapping %>% write_rds("./bike_mapping.rds")
+bike_date_stat %>% write_rds("./bike_date_stat.rds")
+```
+
+
+```{r}
+
+```
+
+# Covid
+```{r}
+cov_fin <- read_csv("cov_fin.csv", 
+    col_types = cols(date = col_date(format = "%m/%d/%y"), 
+        total_deaths = col_skip(), new_deaths = col_skip(), 
+        new_deaths_smoothed = col_skip()))
+```
+
+# join
+```{r}
+bike_cov <- inner_join(bike_date_stat, cov_fin, by = c("dep_dt" = "date")) %>% 
+  transmute(date = dep_dt,
+            bike_used = count,
+            total_cases = total_cases,
+            new_cases = new_cases)
+
+ggplot(bike_cov) +
+  geom_point(aes(x = bike_used, y = new_cases)) +
+  # geom_point(aes(x = bike_used, y = total_cases)) +
+  facet_wrap( ~ month(date), scales = "fixed")
+```
+
+
