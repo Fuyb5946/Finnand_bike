@@ -1,0 +1,154 @@
+---
+title: "COVID-19 Impact on Helsinki Shared Bikes"
+runtime: shiny
+output: html_document
+author: Muhammad Sarmad Kamal Chaudhry and Yubin Fu
+---
+
+```{r setup, include=FALSE, message=FALSE}
+library(tidyverse)
+library(lubridate)
+library(stringr)
+library(ggmap)
+library(shiny)
+library(base)
+library(gridExtra)
+library(forcats)
+library(dplyr)
+library(rsconnect)
+library(plotly)
+```
+
+
+
+```{r, include=FALSE}
+finland_covid <- read.csv("~/Mscs 264b S21/Submit/Finland Covid .csv", nrows=40)
+
+helsinki_bikes <- read.csv("~/Mscs 264b S21/Submit/Helsinki Bikes.csv", nrows=331556)
+
+```
+
+```{r, include=FALSE}
+
+helsinki_bikes1 <- helsinki_bikes %>%
+  mutate(duration..sec.. = duration..sec.. /60) %>%
+  separate(col = departure, into  = c('departure_date', 'departure_time'), 
+           sep = ' ') %>%
+  separate(col = return, into  = c('return_date', 'return_time'),
+           sep = ' ') 
+
+```
+
+```{r,  include=FALSE}
+
+helsinki_bikes2 <- helsinki_bikes1%>%
+  mutate(departure_date = format(as.Date(departure_date),'%m/%d/%Y'),
+         return_date = format(as.Date(return_date),'%m/%d/%Y')) %>%
+  rename(air_temp_cels = Air.temperature..degC., 
+         avg_speed_km_h = avg_speed..km.h.,
+         distance_meter = distance..m.,
+         trip_duration_mins = duration..sec..) %>%
+  mutate(departure_date = str_replace(departure_date, "/2020", "")) %>%
+  select(departure_date, return_date, departure_name, return_name, 
+         distance_meter, trip_duration_mins, air_temp_cels, departure_latitude, departure_longitude, return_latitude, return_longitude)
+```
+
+
+```{r,  include=FALSE}
+finland_covid1 <- finland_covid%>%
+  mutate(date = as.Date(date, "%m/%d/%Y")) %>%
+  mutate(date = str_replace_all(date, "-", "/")) %>%
+  mutate(date = str_replace(date, "20/", "")) %>%
+  rename(departure_date = date) %>%
+  select(departure_date, total_cases, positive_rate,
+         new_cases, total_deaths, total_deaths, total_tests)
+
+
+```
+
+```{r, include=FALSE}
+
+final <- merge(finland_covid1, helsinki_bikes2, by = "departure_date")
+
+```
+
+**COVID-19 Positivity Rate, Deaths, and Bike Sharing:**
+
+```{r, include = FALSE}
+final1 <- final %>%
+  group_by(departure_date)%>%
+  summarise(positivity = mean(positive_rate),
+            deaths = mean(total_deaths),
+            bike_rides = n())
+```
+
+```{r, echo=FALSE}
+inputPanel(
+  selectInput("y1", label = "Y-axis variable:",
+              choices = c("COVID-19 Deaths" = "deaths",
+                          "Bike Rides" = "bike_rides",
+                          "Positivity Rate" = "positivity")),
+  sliderInput("size1", label = "Point size",
+              min = 1, max = 3, value = 1, step = 0.1),
+  sliderInput("alpha1", label = "Point transparency",
+              min = 0.2, max = 1, value = 0.25, step = 0.1)
+  )
+renderPlot({
+  ggplot(final1, aes_string(x = "departure_date", y = input$y1))+
+    geom_point(size=input$size1, alpha=input$alpha1) +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+})
+
+```
+**Bike Rides Analysis by Top 5 Neighborhoods:**
+
+```{r, include = FALSE}
+helsinki_bikes3<- helsinki_bikes2 %>%
+  group_by(departure_date, departure_name)%>%
+  summarise(
+            temperature = mean(air_temp_cels),
+            distance_average = mean(distance_meter),
+            bike_share = n()) %>%
+  filter(departure_name == "Arabian kauppakeskus" |
+           departure_name == "Itämerentori" |
+           departure_name == "Kalasatama (M)" |
+           departure_name == "Ympyrätalo" |
+           departure_name == "Pasilan asema")
+```
+
+```{r, echo=FALSE}
+
+inputPanel(
+  selectInput("y2", label = "Options:",
+              choices = c("Temperature" = "temperature",
+                          "Bike Rides" = "bike_share",
+                          "Average Distance (m)" = "distance_average")),
+    sliderInput("size1", label = "Point size",
+              min = 1, max = 3, value = 1, step = 0.1),
+  sliderInput("alpha1", label = "Point transparency",
+              min = 0.2, max = 1, value = 0.25, step = 0.1)
+  )
+
+renderPlot({
+  ggplot(helsinki_bikes3, aes_string(x = "departure_date", y = input$y2, color = "departure_name"))+
+    geom_point(size=input$size1, alpha=input$alpha1) +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+})
+
+```
+
+
+**Maps of Helsinki Bike Sharing Departure and Return:**
+
+These maps are important for our analysis since it shows that the bikes were returned to the exact place they were loaned from. This tells us that COVID-19 was probably less likely to spread in this case as opposed to if the bikes were loaned from one place and left unsanitized in another part of Helsinki. 
+
+```{r, echo=FALSE, message=FALSE}
+departure <- qmplot(departure_longitude, departure_latitude, data = helsinki_bikes2,maptype = "toner-lite", color = I("red"))
+
+departure
+
+return <- qmplot(return_longitude, return_latitude, data = helsinki_bikes2,maptype = "toner-lite", color = I("blue"))
+
+return
+```
+
